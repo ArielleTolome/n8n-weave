@@ -1,24 +1,35 @@
 const { trace, context, SpanStatusCode, SpanKind } = require("@opentelemetry/api");
 const flat = require("flat");
-const tracer = trace.getTracer("n8n-instrumentation", "1.0.0");
+const DEBUG = process.env.DEBUG_OTEL === "true";
 
 function setupN8nOpenTelemetry() {
   try {
     const { WorkflowExecute } = require("n8n-core");
+    if (DEBUG) {
+      console.log("[OTEL] Applying n8n OpenTelemetry instrumentation");
+      try { console.log("[OTEL] n8n-core resolved at", require.resolve("n8n-core")); } catch (_) {}
+    }
 
     const originalProcessRun = WorkflowExecute.prototype.processRunExecutionData;
     WorkflowExecute.prototype.processRunExecutionData = function (workflow) {
+      const tracer = trace.getTracer("n8n-instrumentation", "1.0.0");
       const wfData = workflow || {};
       const wfAttrs = {
         "n8n.workflow.id": wfData.id ?? "",
         "n8n.workflow.name": wfData.name ?? "",
         ...flat(wfData.settings ?? {}, { delimiter: ".", transformKey: (k) => `n8n.workflow.settings.${k}` }),
       };
+      if (DEBUG) {
+        try { console.log("[OTEL] processRunExecutionData invoked", wfAttrs); } catch (_) {}
+      }
 
       const span = tracer.startSpan("n8n.workflow.execute", {
         attributes: wfAttrs,
         kind: SpanKind.INTERNAL,
       });
+      if (DEBUG) {
+        try { console.log("[OTEL] workflow span started", { recording: span.isRecording() }); } catch (_) {}
+      }
 
       const active = trace.setSpan(context.active(), span);
       return context.with(active, () => {
@@ -52,6 +63,7 @@ function setupN8nOpenTelemetry() {
       mode,
       abortSignal
     ) {
+      const tracer = trace.getTracer("n8n-instrumentation", "1.0.0");
       const node = executionData?.node ?? {};
       const nodeType = node.type?.toLowerCase() || "unknown";
 
@@ -60,6 +72,9 @@ function setupN8nOpenTelemetry() {
         "n8n.node.name": node.name,
         "n8n.node.type": nodeType,
       };
+      if (DEBUG) {
+        try { console.log("[OTEL] runNode invoked", attrs); } catch (_) {}
+      }
 
       // AI enrichment
       const maybeModel = node.parameters?.model || node.parameters?.modelName;
@@ -83,6 +98,9 @@ function setupN8nOpenTelemetry() {
         "n8n.node.execute",
         { attributes: attrs, kind: SpanKind.INTERNAL },
         async (span) => {
+          if (DEBUG) {
+            try { console.log("[OTEL] node span started", { recording: span.isRecording(), node: node.name }); } catch (_) {}
+          }
           try {
             const result = await originalRunNode.apply(this, [workflow, executionData, runExecutionData, runIndex, additionalData, mode, abortSignal]);
 

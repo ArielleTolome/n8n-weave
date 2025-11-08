@@ -19,12 +19,14 @@ const { SemanticResourceAttributes } = require("@opentelemetry/semantic-conventi
 const setupN8nOpenTelemetry = require("./n8n-otel-instrumentation");
 const winston = require("winston");
 const https = require("https");
+const childProcess = require("child_process");
 
 const DEBUG = process.env.DEBUG_OTEL === "true";
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || "n8n";
 const OTLP_URL = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const WANDB_API_KEY = process.env.WANDB_API_KEY;
 const WANDB_PROJECT_ID = process.env.WANDB_PROJECT_ID;
+const PATCH_CHILD_FORK = process.env.PATCH_CHILD_FORK === "true";
 
 // Prepare headers exactly like the working test script
 const basicAuth = Buffer.from(`api:${WANDB_API_KEY}`).toString('base64');
@@ -34,6 +36,31 @@ const headers = {
 };
 
 diag.setLogger(new DiagConsoleLogger(), DEBUG ? DiagLogLevel.DEBUG : DiagLogLevel.ERROR);
+
+if (PATCH_CHILD_FORK) {
+  const originalFork = childProcess.fork.bind(childProcess);
+  childProcess.fork = function(modulePath, args, options) {
+    if (!Array.isArray(args) && args && typeof args === 'object') {
+      options = args; args = [];
+    }
+    if (!args) args = [];
+    if (!options) options = {};
+
+    const preloadPath = "/usr/local/lib/node_modules/n8n/tracing.js";
+    const baseExecArgv = Array.isArray(options.execArgv) ? options.execArgv.slice() : process.execArgv.slice();
+    const hasPreload = baseExecArgv.some((v, i) => (
+      (v === '-r' || v === '--require') && baseExecArgv[i+1] === preloadPath
+    )) || baseExecArgv.includes(`-r=${preloadPath}`) || baseExecArgv.includes(`--require=${preloadPath}`);
+    const execArgv = hasPreload ? baseExecArgv : baseExecArgv.concat(["-r", preloadPath]);
+
+    const env = { ...process.env, ...(options.env || {}) };
+
+    if (DEBUG) {
+      try { console.log("[OTEL] child_process.fork patched", { modulePath, execArgv, hasPreload }); } catch (_) {}
+    }
+    return originalFork(modulePath, args, { ...options, execArgv, env });
+  };
+}
 
 const logger = winston.createLogger({
   level: DEBUG ? "debug" : "info",

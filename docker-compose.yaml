@@ -18,6 +18,8 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=${WEAVE_OTLP_ENDPOINT}
       - DEBUG_OTEL=${DEBUG_OTEL:-false}
       - N8N_PROXY_HOPS=1
+      - PATCH_CHILD_FORK=${PATCH_CHILD_FORK:-true}
+      - EXECUTIONS_PROCESS=${EXECUTIONS_PROCESS:-main}
     networks:
       - n8n-net
 
