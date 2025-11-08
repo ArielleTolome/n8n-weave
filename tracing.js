@@ -75,26 +75,9 @@ if (DEBUG) {
   logger.debug(`[OTEL] API Key: ${WANDB_API_KEY ? WANDB_API_KEY.substring(0, 8) + '...' : 'MISSING'}`);
 }
 
-// Only set context manager if not already set
-try {
-  const currentManager = context.getGlobalContextManager();
-  if (currentManager && currentManager.constructor.name === 'NoopContextManager') {
-    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
-  }
-} catch (e) {
-  // If getting current manager fails, set it
-  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
-}
-
 registerInstrumentations({
   instrumentations: [
-    getNodeAutoInstrumentations({
-      "@opentelemetry/instrumentation-fs": { enabled: false },
-      "@opentelemetry/instrumentation-dns": { enabled: false },
-      "@opentelemetry/instrumentation-net": { enabled: false },
-      "@opentelemetry/instrumentation-tls": { enabled: false },
-      "@opentelemetry/instrumentation-pg": { enhancedDatabaseReporting: true },
-    }),
+    getNodeAutoInstrumentations(),
   ],
 });
 
@@ -140,14 +123,12 @@ try {
     startResult
       .then(() => {
         logger.info(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
-        // Send a test trace to verify Weave connection
-        sendTestTrace();
+        if (process.env.SEND_TEST_TRACE === "true") sendTestTrace();
       })
       .catch((err) => logger.error("[OTEL] SDK start failed", err));
   } else {
     logger.info(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
-    // Send a test trace to verify Weave connection
-    sendTestTrace();
+    if (process.env.SEND_TEST_TRACE === "true") sendTestTrace();
   }
 } catch (err) {
   logger.error("[OTEL] SDK initialization failed", err);
