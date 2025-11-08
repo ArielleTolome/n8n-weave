@@ -2,6 +2,13 @@ const { trace, context, SpanStatusCode, SpanKind } = require("@opentelemetry/api
 const flat = require("flat");
 const DEBUG = process.env.DEBUG_OTEL === "true";
 
+const sanitizeSpanName = (value, fallback) => {
+  const base = (value ?? fallback ?? "").toString().trim();
+  if (!base) return fallback ?? "n8n";
+  const clean = base.replace(/[^a-zA-Z0-9\-_ ]+/g, "").replace(/\s+/g, "-");
+  return clean || (fallback ?? "n8n");
+};
+
 function setupN8nOpenTelemetry() {
   try {
     const { WorkflowExecute } = require("n8n-core");
@@ -14,9 +21,11 @@ function setupN8nOpenTelemetry() {
     WorkflowExecute.prototype.processRunExecutionData = function (workflow) {
       const tracer = trace.getTracer("n8n-instrumentation", "1.0.0");
       const wfData = workflow || {};
+      const wfName = wfData.name ?? "";
       const wfAttrs = {
         "n8n.workflow.id": wfData.id ?? "",
-        "n8n.workflow.name": wfData.name ?? "",
+        "n8n.workflow.name": wfName,
+        "n8n.workflow.span_name": sanitizeSpanName(wfName, wfData.id ?? "n8n-workflow"),
         ...flat(wfData.settings ?? {}, { delimiter: ".", transformKey: (k) => `n8n.workflow.settings.${k}` }),
       };
       if (DEBUG) {
@@ -94,8 +103,10 @@ function setupN8nOpenTelemetry() {
         if (maybePrompt) attrs["gen_ai.input.messages"] = JSON.stringify(maybePrompt);
       }
 
+      const nodeSpanName = sanitizeSpanName(node.name, nodeType || "n8n-node");
+
       return tracer.startActiveSpan(
-        "n8n.node.execute",
+        nodeSpanName,
         { attributes: attrs, kind: SpanKind.INTERNAL },
         async (span) => {
           if (DEBUG) {
