@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  n8n:
+    build: .
+    image: n8n-weave-otel:latest
+    container_name: n8n-weave
+    restart: always
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+    env_file:
+      - .env
+    environment:
+      - OTEL_SERVICE_NAME=n8n
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${WEAVE_OTLP_ENDPOINT}
+      - DEBUG_OTEL=${DEBUG_OTEL:-false}
+      - N8N_PROXY_HOPS=1
+    networks:
+      - n8n-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel run n8n-tunnel
+    volumes:
+      - ./cloudflared:/etc/cloudflared
+    networks:
+      - n8n-net
+
+networks:
+  n8n-net:
+    driver: bridge

@@ -1,0 +1,7 @@
+tunnel: n8n-tunnel
+credentials-file: /etc/cloudflared/n8n-tunnel.json
+
+ingress:
+  - hostname: n8n.targum.video
+    service: http://n8n:5678       # internal Docker hostname → n8n container
+  - service: http_status:404
