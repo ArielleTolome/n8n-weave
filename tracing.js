@@ -13,6 +13,9 @@ const opentelemetry = require("@opentelemetry/sdk-node");
 const { OTLPTraceExporter } = require("@opentelemetry/exporter-trace-otlp-proto");
 const { OTLPLogExporter } = require("@opentelemetry/exporter-logs-otlp-proto");
 const { getNodeAutoInstrumentations } = require("@opentelemetry/auto-instrumentations-node");
+const { LangChainInstrumentation } = require("@traceloop/instrumentation-langchain");
+const { OpenAIInstrumentation } = require("@elastic/opentelemetry-instrumentation-openai");
+const { AnthropicInstrumentation } = require("@traceloop/instrumentation-anthropic");
 const { registerInstrumentations } = require("@opentelemetry/instrumentation");
 const { Resource } = require("@opentelemetry/resources");
 const { SemanticResourceAttributes } = require("@opentelemetry/semantic-conventions");
@@ -48,30 +51,18 @@ if (DEBUG) {
   logger.debug(`[OTEL] API Key: ${WANDB_API_KEY ? WANDB_API_KEY.substring(0, 8) + '...' : 'MISSING'}`);
 }
 
-// Only set context manager if not already set
-try {
-  const currentManager = context.getGlobalContextManager();
-  if (currentManager && currentManager.constructor.name === 'NoopContextManager') {
-    context.setGlobalContextManager(new AsyncHooksContextManager().enable());
-  }
-} catch (e) {
-  // If getting current manager fails, set it
-  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
-}
+// // Only set context manager if not already set
+// try {
+//   const currentManager = context.getGlobalContextManager();
+//   if (currentManager && currentManager.constructor.name === 'NoopContextManager') {
+//     context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+//   }
+// } catch (e) {
+//   // If getting current manager fails, set it
+//   context.setGlobalContextManager(new AsyncHooksContextManager().enable());
+// }
 
-registerInstrumentations({
-  instrumentations: [
-    getNodeAutoInstrumentations({
-      "@opentelemetry/instrumentation-fs": { enabled: false },
-      "@opentelemetry/instrumentation-dns": { enabled: false },
-      "@opentelemetry/instrumentation-net": { enabled: false },
-      "@opentelemetry/instrumentation-tls": { enabled: false },
-      "@opentelemetry/instrumentation-pg": { enhancedDatabaseReporting: true },
-    }),
-  ],
-});
 
-setupN8nOpenTelemetry();
 
 let traceExporter, logExporter;
 try {
@@ -91,7 +82,7 @@ try {
     headers: headers, 
     timeoutMillis: 10000 
   });
-  logger.info("[OTEL] Exporters initialized for Weave");
+  logger.debug("[OTEL] Exporters initialized for Weave");
 } catch (e) {
   logger.error("[OTEL] Failed to init exporters", e);
   logger.error(`[OTEL] Endpoint used: ${OTLP_URL}`);
@@ -107,24 +98,47 @@ const sdk = new opentelemetry.NodeSDK({
   logRecordProcessors: [new opentelemetry.logs.SimpleLogRecordProcessor(logExporter)],
 });
 
+
 try {
+  
   const startResult = sdk.start();
   if (startResult && typeof startResult.then === 'function') {
     startResult
       .then(() => {
-        logger.info(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
+        logger.debug(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
         // Send a test trace to verify Weave connection
         sendTestTrace();
       })
       .catch((err) => logger.error("[OTEL] SDK start failed", err));
   } else {
-    logger.info(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
+    logger.debug(`[OTEL] Tracing started for service=${SERVICE_NAME}`);
     // Send a test trace to verify Weave connection
-    sendTestTrace();
+    // sendTestTrace();
   }
 } catch (err) {
   logger.error("[OTEL] SDK initialization failed", err);
 }
+
+
+const auto = getNodeAutoInstrumentations({
+  // disable noisy ones
+  '@opentelemetry/instrumentation-http': { enabled: false },
+  '@opentelemetry/instrumentation-net': { enabled: false },
+  '@opentelemetry/instrumentation-dns': { enabled: false },
+});
+
+registerInstrumentations({
+  tracerProvider: sdk.tracerProvider,
+  instrumentations: [
+    auto,
+    new LangChainInstrumentation(),
+    new OpenAIInstrumentation(),
+    new AnthropicInstrumentation()
+  ],
+});
+
+setupN8nOpenTelemetry();
+
 
 function sendTestTrace() {
   logger.debug(`[OTEL] Sending test trace with headers: ${JSON.stringify({

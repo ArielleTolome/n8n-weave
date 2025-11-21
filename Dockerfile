@@ -25,6 +25,9 @@ RUN npm install -g \
   @opentelemetry/semantic-conventions \
   @opentelemetry/instrumentation \
   @arizeai/openinference-semantic-conventions \
+  @traceloop/instrumentation-langchain \
+  @elastic/opentelemetry-instrumentation-openai \
+  @traceloop/instrumentation-anthropic \
   flat \
   winston 
 
